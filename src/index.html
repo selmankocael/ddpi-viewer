@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SD Card Video Viewer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        #container {
+            max-width: 1200px;
+            margin: auto;
+        }
+        #controls {
+            margin-bottom: 20px;
+        }
+        #timeline {
+            display: flex;
+            overflow-x: auto;
+            padding: 10px;
+            background-color: #fff;
+            border: 1px solid #ddd;
+        }
+        .thumbnail {
+            margin-right: 10px;
+            text-align: center;
+            cursor: pointer;
+        }
+        .thumbnail img {
+            width: 120px;
+            height: 68px;
+            object-fit: cover;
+            border: 2px solid transparent;
+        }
+        .thumbnail.selected img {
+            border-color: #007bff;
+        }
+        #video-player {
+            width: 100%;
+            max-height: 400px;
+            background-color: #000;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="controls">
+            <button onclick="selectFolder()">Select SD Card Folder</button>
+            <button onclick="downloadSelected()">Download Selected</button>
+            <button onclick="mergeAndDownload()">Merge & Download</button>
+        </div>
+        <div id="timeline"></div>
+        <video id="video-player" controls></video>
+    </div>
+    <script>
+        import { invoke } from '@tauri-apps/api/tauri';
+        import { open } from '@tauri-apps/api/dialog';
+
+        let videos = [];
+        let selectedVideos = [];
+
+        async function selectFolder() {
+            const folder = await open({ directory: true });
+            if (folder) {
+                videos = await invoke('scan_videos', { folder });
+                displayTimeline();
+            }
+        }
+
+        function displayTimeline() {
+            const timeline = document.getElementById('timeline');
+            timeline.innerHTML = '';
+            videos.forEach((video, index) => {
+                const thumbDiv = document.createElement('div');
+                thumbDiv.className = 'thumbnail';
+                thumbDiv.innerHTML = `
+                    <img src="${video.thumbnail}" alt="Thumbnail" data-index="${index}">
+                    <p>${video.timestamp}</p>
+                `;
+                thumbDiv.onclick = () => toggleVideoSelection(index);
+                timeline.appendChild(thumbDiv);
+            });
+        }
+
+        function toggleVideoSelection(index) {
+            const thumb = document.getElementsByClassName('thumbnail')[index];
+            if (selectedVideos.includes(index)) {
+                selectedVideos = selectedVideos.filter(i => i !== index);
+                thumb.classList.remove('selected');
+            } else {
+                selectedVideos.push(index);
+                thumb.classList.add('selected');
+            }
+            const videoPlayer = document.getElementById('video-player');
+            videoPlayer.src = `file://${videos[index].path}`;
+            videoPlayer.play();
+        }
+
+        async function downloadSelected() {
+            if (selectedVideos.length === 0) {
+                alert('Please select at least one video.');
+                return;
+            }
+            const savePath = await open({ directory: true });
+            if (savePath) {
+                for (const index of selectedVideos) {
+                    await invoke('optimize_video', { videoPath: videos[index].path, savePath });
+                }
+                alert('Videos downloaded successfully!');
+            }
+        }
+
+        async function mergeAndDownload() {
+            if (selectedVideos.length === 0) {
+                alert('Please select at least one video.');
+                return;
+            }
+            const savePath = await open({ directory: true });
+            if (savePath) {
+                const videoPaths = selectedVideos.map(index => videos[index].path);
+                await invoke('merge_videos', { videoPaths, savePath });
+                alert('Videos merged and downloaded successfully!');
+            }
+        }
+    </script>
+</body>
+</html>
